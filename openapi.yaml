@@ -1,0 +1,797 @@
+openapi: 3.0.0
+info:
+  title: Workout Tracker API
+  description: RESTful API for managing workouts, exercises, and tracking fitness progress with Access Token & Refresh Token authentication
+  version: 2.0.0
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:5001/api
+    description: Development server
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Use access token (not refresh token) for API calls
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User ID
+        name:
+          type: string
+          description: User's full name
+        email:
+          type: string
+          format: email
+          description: User's email address
+
+    TokenPair:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          description: Access token (expires in 15 minutes)
+        refreshToken:
+          type: string
+          description: Refresh token (expires in 7 days)
+
+    Exercise:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: Exercise ID
+        name:
+          type: string
+          description: Exercise name
+        description:
+          type: string
+          description: Exercise description
+        category:
+          type: string
+          enum: [cardio, strength, flexibility, balance, sports]
+          description: Exercise category
+        muscleGroup:
+          type: string
+          enum: [chest, back, legs, shoulders, arms, core, full-body, cardio]
+          description: Primary muscle group targeted
+
+    WorkoutExercise:
+      type: object
+      required:
+        - exercise
+        - sets
+        - repetitions
+      properties:
+        exercise:
+          type: string
+          description: Exercise ID
+        sets:
+          type: integer
+          minimum: 1
+          description: Number of sets
+        repetitions:
+          type: integer
+          minimum: 1
+          description: Number of repetitions per set
+        weight:
+          type: number
+          minimum: 0
+          description: Weight used (in kg or lbs)
+        duration:
+          type: number
+          minimum: 0
+          description: Duration in seconds (for timed exercises)
+        notes:
+          type: string
+          description: Additional notes for this exercise
+
+    Workout:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: Workout ID
+        user:
+          type: string
+          description: User ID
+        name:
+          type: string
+          description: Workout name
+        description:
+          type: string
+          description: Workout description
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkoutExercise"
+        scheduledDate:
+          type: string
+          format: date-time
+          description: Scheduled date and time
+        status:
+          type: string
+          enum: [pending, completed, skipped]
+          description: Workout status
+        completedDate:
+          type: string
+          format: date-time
+          description: Date when workout was completed
+        comments:
+          type: string
+          description: Comments or notes about the workout
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+
+paths:
+  /auth/signup:
+    post:
+      summary: Register a new user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - password
+              properties:
+                name:
+                  type: string
+                  example: John Doe
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 6
+                  example: password123
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      accessToken:
+                        type: string
+                        description: Access token (15 min expiry)
+                      refreshToken:
+                        type: string
+                        description: Refresh token (7 day expiry)
+                  message:
+                    type: string
+                    example: User registered successfully. Access token expires in 15 minutes.
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/login:
+    post:
+      summary: Login user
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: john@example.com
+                password:
+                  type: string
+                  format: password
+                  example: password123
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      accessToken:
+                        type: string
+                        description: Access token (15 min expiry)
+                      refreshToken:
+                        type: string
+                        description: Refresh token (7 day expiry)
+                  message:
+                    type: string
+                    example: Login successful. Access token expires in 15 minutes.
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      description: Use refresh token to get a new access token and refresh token pair. Call this endpoint when access token expires (after 15 minutes).
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+                  description: Valid refresh token received from login/signup
+                  example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      responses:
+        "200":
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/TokenPair"
+                  message:
+                    type: string
+                    example: Tokens refreshed successfully
+        "400":
+          description: Refresh token is required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: Invalid or expired refresh token
+
+  /auth/logout:
+    post:
+      summary: Logout user
+      description: Invalidate refresh token to logout user. After logout, refresh token cannot be used to get new access tokens.
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Logged out successfully
+        "401":
+          description: Not authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /auth/me:
+    get:
+      summary: Get current user profile
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User profile retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: Not authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                token_expired:
+                  value:
+                    success: false
+                    message: Access token expired. Please refresh your token.
+                    code: TOKEN_EXPIRED
+                invalid_token_type:
+                  value:
+                    success: false
+                    message: Invalid token type. Please use an access token.
+                    code: INVALID_TOKEN_TYPE
+
+  /exercises:
+    get:
+      summary: Get all exercises
+      tags:
+        - Exercises
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: category
+          schema:
+            type: string
+            enum: [cardio, strength, flexibility, balance, sports]
+          description: Filter by category
+        - in: query
+          name: muscleGroup
+          schema:
+            type: string
+            enum: [chest, back, legs, shoulders, arms, core, full-body, cardio]
+          description: Filter by muscle group
+      responses:
+        "200":
+          description: List of exercises
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Exercise"
+
+  /exercises/{id}:
+    get:
+      summary: Get exercise by ID
+      tags:
+        - Exercises
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Exercise ID
+      responses:
+        "200":
+          description: Exercise details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Exercise"
+        "404":
+          description: Exercise not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workouts:
+    post:
+      summary: Create a new workout
+      tags:
+        - Workouts
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - scheduledDate
+                - exercises
+              properties:
+                name:
+                  type: string
+                  example: Upper Body Strength
+                description:
+                  type: string
+                  example: Focus on chest and back exercises
+                scheduledDate:
+                  type: string
+                  format: date-time
+                  example: "2024-02-05T10:00:00Z"
+                exercises:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - exercise
+                      - sets
+                      - repetitions
+                    properties:
+                      exercise:
+                        type: string
+                        example: 507f1f77bcf86cd799439011
+                      sets:
+                        type: integer
+                        minimum: 1
+                        example: 3
+                      repetitions:
+                        type: integer
+                        minimum: 1
+                        example: 12
+                      weight:
+                        type: number
+                        example: 50
+                      duration:
+                        type: number
+                        example: 0
+                      notes:
+                        type: string
+                        example: Focus on form
+      responses:
+        "201":
+          description: Workout created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Workout"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    get:
+      summary: Get all workouts for logged-in user
+      tags:
+        - Workouts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, completed, skipped]
+          description: Filter by status
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+          description: Filter workouts from this date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+          description: Filter workouts until this date
+      responses:
+        "200":
+          description: List of workouts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workout"
+
+  /workouts/{id}:
+    get:
+      summary: Get workout by ID
+      tags:
+        - Workouts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Workout ID
+      responses:
+        "200":
+          description: Workout details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Workout"
+        "404":
+          description: Workout not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    put:
+      summary: Update workout
+      tags:
+        - Workouts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Workout ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                exercises:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/WorkoutExercise"
+                scheduledDate:
+                  type: string
+                  format: date-time
+                status:
+                  type: string
+                  enum: [pending, completed, skipped]
+                comments:
+                  type: string
+      responses:
+        "200":
+          description: Workout updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/Workout"
+        "404":
+          description: Workout not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+    delete:
+      summary: Delete workout
+      tags:
+        - Workouts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+          description: Workout ID
+      responses:
+        "200":
+          description: Workout deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Workout deleted successfully
+        "404":
+          description: Workout not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /workouts/reports/progress:
+    get:
+      summary: Generate workout progress report
+      tags:
+        - Reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+          description: Report start date
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+          description: Report end date
+      responses:
+        "200":
+          description: Progress report generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      summary:
+                        type: object
+                        properties:
+                          totalWorkouts:
+                            type: integer
+                          totalExercises:
+                            type: integer
+                          averageExercisesPerWorkout:
+                            type: string
+                          currentStreak:
+                            type: integer
+                          longestStreak:
+                            type: integer
+                      muscleGroupDistribution:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      topExercises:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            count:
+                              type: integer
+                      recentWorkouts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            completedDate:
+                              type: string
+                              format: date-time
+                            exerciseCount:
+                              type: integer
+
+tags:
+  - name: Authentication
+    description: User authentication endpoints with access token (15 min) and refresh token (7 days)
+  - name: Exercises
+    description: Exercise management endpoints
+  - name: Workouts
+    description: Workout management endpoints
+  - name: Reports
+    description: Progress tracking and reporting endpoints
