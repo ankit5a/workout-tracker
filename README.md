@@ -4,6 +4,10 @@ A full-stack workout tracking application for planning workouts, managing an exe
 
 The project is split into a modern Angular frontend and a Node.js/Express backend API backed by MongoDB. Authentication is handled with JSON Web Tokens using access and refresh tokens.
 
+<img width="3420" height="1722" alt="workout-tracker-login-page" src="https://github.com/user-attachments/assets/7e671ec7-bea8-470f-ad79-bf59a9b6f222" />
+<br/>
+<img width="3420" height="2466" alt="workout-tracker-app-inside" src="https://github.com/user-attachments/assets/cef995ec-66ce-49c3-aba1-1cecd27ed0f1" />
+
 ## Tech Stack
 
 ### Frontend
